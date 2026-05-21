@@ -1,127 +1,161 @@
 # Makefile 基本语法
 
-## 规则结构
+## 从简单到标准，逐步演进
 
-| 部分 | 说明 |
-|------|------|
-| 目标 (target) | 要生成的文件名 |
-| 依赖 (prerequisites) | 生成目标需要的文件 |
-| 命令 (recipe) | shell 命令，必须以 **Tab** 开头 |
+假设有 `main.c`、`input.c`、`calcu.c` 三个源文件。
 
-```makefile
-target: prerequisites
-	command
+---
+
+## 阶段一：不用 Makefile（最原始）
+
+```bash
+gcc main.c input.c calcu.c -o main
 ```
 
-## 自动变量
+每次改一个文件也要全部重新编译，效率最低。
 
-| 变量 | 展开为 |
-|------|--------|
-| `$@` | 目标名 |
-| `$<` | 第一个依赖 |
-| `$^` | 所有依赖 |
-| `$?` | 所有比目标新的依赖 |
-| `$(@D)` | 目标所在目录 |
-| `$(@F)` | 目标文件名（去掉目录） |
+---
 
-## 常用场景
+## 阶段二：最简单的 Makefile（单文件）
 
 ```makefile
-# 简单单文件
-hello: hello.c
-	gcc hello.c -o hello
+main: main.c input.c calcu.c
+	gcc -o main main.c input.c calcu.c
+```
 
-# 多文件编译
-app: main.o utils.o
-	gcc $^ -o $@
+运行 `make`，如果任何源文件比 `main` 新，就重新编译。
+
+---
+
+## 阶段三：多文件分别编译（教材写法）
+
+每个 `.c` 先编译成 `.o`，再链接：
+
+```makefile
+main: main.o input.o calcu.o
+	gcc -o main main.o input.o calcu.o
 
 main.o: main.c
-	gcc -c $<
+	gcc -c main.c
 
-utils.o: utils.c
-	gcc -c $<
+input.o: input.c
+	gcc -c input.c
+
+calcu.o: calcu.c
+	gcc -c calcu.c
 
 clean:
-	rm -f *.o app
+	rm *.o main
 ```
 
-## 变量
+> 规则格式：`目标: 依赖` 下一行 Tab 缩进 + 命令。命令前**必须是 Tab**，不能是空格。
+
+分开编译的好处：改了 `input.c` 只重新编译 `input.o`，`main.o` 和 `calcu.o` 不动，省时间。
+
+---
+
+## 阶段四：引入变量
+
+常用部分抽成变量，改一处全生效：
 
 ```makefile
 CC = gcc
-CFLAGS = -Wall -g -O2
-TARGET = app
-SRCS = main.c utils.c
-OBJS = $(SRCS:.c=.o)
+TARGET = main
+OBJS = main.o input.o calcu.o
 
 $(TARGET): $(OBJS)
-	$(CC) $^ -o $@
-```
+	$(CC) -o $(TARGET) $(OBJS)
 
-| 变量类型 | 语法 | 示例 |
-|------|------|------|
-| 显式定义 | `VAR = value` | `CC = gcc` |
-| 引用 | `$(VAR)` | `$(CC)` |
-| 替换后缀 | `$(SRCS:.c=.o)` | main.c → main.o |
-| 追加 | `VAR += value` | `CFLAGS += -O2` |
-| 条件赋值 | `VAR ?= value` | 未定义才赋值 |
+main.o: main.c
+	$(CC) -c main.c
 
-## 模式规则
+input.o: input.c
+	$(CC) -c input.c
 
-| 写法 | 含义 |
-|------|------|
-| `%.o: %.c` | 任意 `.c` 生成同名 `.o` |
-
-```makefile
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
-```
-
-一个 `%.o: %.c` 规则替代了每个 `.c` 文件都要单独写一条规则的重复劳动。
-
-## 伪目标
-
-```makefile
-.PHONY: clean install all
-
-all: app
-
-install:
-	cp app /usr/local/bin/
+calcu.o: calcu.c
+	$(CC) -c calcu.c
 
 clean:
-	rm -f *.o app
+	rm $(OBJS) $(TARGET)
 ```
 
-> `.PHONY` 告诉 make 这些目标不是文件名，总是执行。否则目录下有 `clean` 文件时 `make clean` 会跳过。
+> 引用变量用 `$(变量名)`。
 
-## 内置变量
+---
 
-| 变量 | 默认值 |
-|------|--------|
-| `$(CC)` | cc（即 gcc） |
-| `$(CXX)` | g++ |
-| `$(CFLAGS)` | 空 |
-| `$(CXXFLAGS)` | 空 |
-| `$(RM)` | rm -f |
+## 阶段五：自动变量
 
-## 条件判断
+不再写死文件名，用自动变量代替：
+
+| 自动变量 | 含义 |
+|----------|------|
+| `$@` | 目标名 |
+| `$<` | 第一个依赖 |
+| `$^` | 所有依赖 |
 
 ```makefile
-ifeq ($(DEBUG), 1)
-    CFLAGS += -g -O0
-else
-    CFLAGS += -O2
-endif
+CC = gcc
+TARGET = main
+OBJS = main.o input.o calcu.o
+
+$(TARGET): $(OBJS)
+	$(CC) -o $@ $^
+
+main.o: main.c
+	$(CC) -c $<
+
+input.o: input.c
+	$(CC) -c $<
+
+calcu.o: calcu.c
+	$(CC) -c $<
+
+clean:
+	rm $(OBJS) $(TARGET)
 ```
 
-使用：`make`（发布模式）、`make DEBUG=1`（调试模式）
+---
 
-## 使用建议
+## 阶段六：模式规则（最终标准写法）
 
-| 建议 | 原因 |
+`%.o: %.c` 一条规则替代所有 `.o` 规则，新增 `.c` 也无需改 Makefile：
+
+```makefile
+CC = gcc
+TARGET = main
+OBJS = main.o input.o calcu.o
+
+$(TARGET): $(OBJS)
+	$(CC) -o $@ $^
+
+%.o: %.c
+	$(CC) -c $<
+
+.PHONY: clean
+clean:
+	rm $(OBJS) $(TARGET)
+```
+
+---
+
+## 演进总结
+
+| 阶段 | 特点 | 适合 |
+|------|------|------|
+| 一 | 无 Makefile | 单文件测试 |
+| 二 | 单条规则 | 多文件但无增量编译 |
+| 三 | 每个 `.o` 单写规则 | 教程讲解，清晰直观 |
+| 四 | 引入变量 | 改编译选项方便 |
+| 五 | 自动变量 `$@ $^ $<` | 减少硬编码文件名 |
+| 六 | 模式规则 `%.o: %.c` | 实际项目标准写法 |
+
+---
+
+## 重点提醒
+
+| 要点 | 说明 |
 |------|------|
-| 用模式规则代替逐个写 | 新增 `.c` 不用改 Makefile |
-| 变量放文件顶部 | 改编译器/选项只改一处 |
-| `clean` 必加 `.PHONY` | 避免被同名文件干扰 |
-| 不写 Makefile 就用 `gcc *.c -o app` | 单文件或简单项目不必过度工程化 |
+| Tab 缩进 | 命令前必须是 Tab，空格会报 `*** missing separator` |
+| `.PHONY` | `clean` 必须声明，防止目录下出现同名文件不执行 |
+| 增量编译 | make 只在依赖比目标新时才重新编译 |
+| 默认目标 | `make` 不加参数执行第一个目标 |
