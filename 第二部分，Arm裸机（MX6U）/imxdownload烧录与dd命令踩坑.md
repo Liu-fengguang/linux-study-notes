@@ -177,3 +177,63 @@ Mac（烧录）
 | 文件拖到 SD 卡不启动 | 用 dd 物理扇区写入，不能文件系统拷贝 |
 | dd 报 Invalid argument | 加 `conv=sync` |
 | dd 报 Resource busy | 关访达 → `unmountDisk force` → 立即 dd |
+| 烧录成功但板子跑旧程序 | 烧到了分区 `/dev/sda1` 而非物理盘 `/dev/sda` |
+
+---
+
+## 十、致命错误：烧到分区 `/dev/sda1` 而非物理盘 `/dev/sda`
+
+### 症状
+
+烧录提示成功，上机却跑之前的旧程序。
+
+### 原因
+
+```bash
+./imxdownload beep.bin /dev/sda1   # ❌ 写到分区
+./imxdownload beep.bin /dev/sda    # ✅ 写到物理磁盘
+```
+
+| 设备 | 含义 | 起始扇区 |
+|------|------|----------|
+| `/dev/sda` | 整张 SD 卡物理介质 | 第 0 扇区 |
+| `/dev/sda1` | SD 卡上切出的第一个逻辑分区 | 第 8192 扇区（跳跃了分区表） |
+
+`fdisk -l` 验证：
+
+```
+/dev/sda1  8192 61439999  类型 W95 FAT32
+```
+
+### 错位过程
+
+```
+烧到 /dev/sda1 → 固件去往 8192 + 2 = 第 8194 扇区
+芯片 Boot ROM → 死读第 2 扇区 → 找到旧固件的 IVT 头
+旧程序运行，新固件在第 8194 扇区吃灰
+```
+
+> Boot ROM 不看分区表，只看绝对物理扇区。分区是文件系统的概念，芯片不认识。
+
+### 铁律
+
+**烧录裸机固件、U-Boot、内核镜像，一律对准物理裸设备（`/dev/sda`、`/dev/rdisk4`），绝对不要带数字。**
+
+---
+
+## 十一、Mac 终端路径问题：iCloud Desktop 陷阱
+
+### iCloud 桌面路径
+
+开了 iCloud 桌面同步后，`~/Desktop` 的真实路径被转移到深层 iCloud 目录。终端 `~/Desktop/load.imx` 可能找不到。
+
+### 终极解法：拖拽大法
+
+```bash
+sudo dd if=                    # ← 先敲到 if=，不敲路径
+# 然后把桌面上的 load.imx 直接拖进终端窗口
+# Mac 自动填入 100% 正确的绝对路径
+
+# 再补全后半段：
+of=/dev/rdisk4 bs=512 seek=2 conv=sync
+```
